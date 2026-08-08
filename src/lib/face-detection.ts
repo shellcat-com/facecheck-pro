@@ -1,8 +1,8 @@
-// Real face detection + face recognition using face-api.js
+// Real face detection using face-api.js (TensorFlow.js backend)
+// Models served from /models/
 
-let ready = false
-let loading: Promise<boolean> | null = null
-const MODEL_URL = "/models"
+let ready = false; let loading: Promise<boolean> | null = null
+const MODEL = "/models"
 
 export async function loadModels(): Promise<boolean> {
   if (ready) return true
@@ -10,36 +10,21 @@ export async function loadModels(): Promise<boolean> {
   loading = (async () => {
     try {
       const api = await import("face-api.js")
-      await Promise.all([
-        api.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-        api.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-        api.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-      ])
+      await Promise.all([api.nets.tinyFaceDetector.loadFromUri(MODEL), api.nets.faceLandmark68Net.loadFromUri(MODEL), api.nets.faceRecognitionNet.loadFromUri(MODEL)])
       ready = true; return true
     } catch { return false }
   })()
   return loading
 }
 
-export interface FaceBox { x: number; y: number; width: number; height: number; score: number }
-export interface FaceResult {
-  box: FaceBox
-  descriptor: Float32Array
-  landmarks: Array<{ x: number; y: number }>
-  age?: number; gender?: string; expression?: string
-}
+export interface FaceData { box: {x:number;y:number;w:number;h:number;score:number}; desc: Float32Array; landmarks: {x:number;y:number}[] }
 
-export async function detectFaces(input: HTMLImageElement | HTMLVideoElement): Promise<FaceResult[]> {
-  const ok = await loadModels()
-  if (!ok) throw new Error("Models not loaded")
+export async function detectFaces(input: HTMLImageElement): Promise<FaceData[]> {
+  if (!(await loadModels())) throw new Error("Models failed to load")
   const api = await import("face-api.js")
   const opts = new (api as any).TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
   const r = await api.detectAllFaces(input as any, opts).withFaceLandmarks().withFaceDescriptors()
-  return r.map((d: any) => ({
-    box: { x: d.detection.box.x, y: d.detection.box.y, width: d.detection.box.width, height: d.detection.box.height, score: Math.round(d.detection.score * 100) },
-    descriptor: d.descriptor,
-    landmarks: (d.landmarks?.positions || []).map((p: any) => ({ x: p.x, y: p.y })),
-  }))
+  return r.map((d: any) => ({ box: { x: d.detection.box.x, y: d.detection.box.y, w: d.detection.box.width, h: d.detection.box.height, score: Math.round(d.detection.score * 100) }, desc: d.descriptor, landmarks: (d.landmarks?.positions || []).map((p: any) => ({ x: p.x, y: p.y })) }))
 }
 
 export function compareDescriptors(a: Float32Array, b: Float32Array): number {
@@ -50,8 +35,5 @@ export function compareDescriptors(a: Float32Array, b: Float32Array): number {
 }
 
 export function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image(); img.crossOrigin = "anonymous"
-    img.onload = () => resolve(img); img.onerror = reject; img.src = url
-  })
+  return new Promise((resolve, reject) => { const img = new Image(); img.crossOrigin = "anonymous"; img.onload = () => resolve(img); img.onerror = reject; img.src = url })
 }
