@@ -1,0 +1,29 @@
+# FaceCheck Pro — Python Backend
+# Face embedding + vector search + real API integrations
+
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+python-multipart==0.0.19
+
+# Face embedding (ArcFace via ONNX)
+onnxruntime==1.21.0
+numpy==2.2.3
+opencv-python-headless==4.11.0.86
+Pillow==11.1.0
+
+# Vector database
+chromadb==0.6.3
+
+# Web crawling & parsing
+beautifulsoup4==4.12.3
+lxml==5.3.1
+feedparser==6.0.11
+
+# Image hashing (perceptual dedup)
+imagehash==4.3.1
+
+# Async scraping
+aiohttp==3.11.12
+aiofiles==24.1.0

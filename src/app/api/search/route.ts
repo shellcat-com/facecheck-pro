@@ -1,86 +1,156 @@
+/**
+ * FaceCheck Pro — Search API Proxy
+ * Forwards image uploads to the Python backend for real face embedding + vector search.
+ *
+ * The Python backend (FastAPI on port 8000) handles:
+ * 1. Face detection (SCRFD)
+ * 2. Face embedding (ArcFace 512-dim)
+ * 3. Vector similarity search (ChromaDB)
+ * 4. Returns matches from: FBI Wanted, Interpol, JailBase mugshots,
+ *    scammer databases, news (GDELT), and YouTube thumbnails
+ *
+ * Falls back gracefully if the Python backend is not running.
+ */
+
 import { NextResponse } from "next/server"
 
-// Real search results from multiple reverse image search engines
-// Uses Google Custom Search JSON API (free tier: 100 queries/day)
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || ""
-const GOOGLE_CX = process.env.GOOGLE_CX || ""
-
-export interface SearchResult {
-  id: string; imageUrl: string; sourceUrl: string; sourceName: string
-  title: string; matchScore: number; category: "social"|"news"|"mugshot"|"video"|"scammer"|"other"
-  thumbnailUrl: string; description?: string; foundAt: string
-}
-
-function parseDomain(url: string): string {
-  try { const h = new URL(url).hostname.replace("www.", "")
-    const parts = h.split(".")
-    return parts.length > 1 ? parts[0].charAt(0).toUpperCase() + parts[0].slice(1) : h
-  } catch { return url }
-}
-
-function guessCategory(url: string): SearchResult["category"] {
-  const u = url.toLowerCase()
-  if (/instagram|facebook|tiktok|twitter|x\.com|linkedin|snapchat|pinterest|reddit|onlyfans/i.test(u)) return "social"
-  if (/youtube|vimeo|tiktok\.com\/@/i.test(u)) return "video"
-  if (/mugshot|arrest|booking|inmate|offender/i.test(u)) return "mugshot"
-  if (/scam|fraud|warning|alert|wanted/i.test(u)) return "scammer"
-  if (/news|blog|article|press|post|times|gazette|herald|chronicle|daily/i.test(u)) return "news"
-  return "other"
-}
-
-function generateMatchScore(idx: number, total: number): number {
-  const base = 95 - (idx * (50 / total))
-  return Math.max(50, Math.round(base + (Math.random() * 10 - 5)))
-}
+const BACKEND_URL = process.env.FACE_API_URL || "http://localhost:8000"
 
 export async function POST(req: Request) {
   try {
-    const { imageUrl } = await req.json()
-    if (!imageUrl) return NextResponse.json({ error: "No image URL provided" }, { status: 400 })
+    // Try to proxy to Python backend first
+    let formData: FormData | null = null
 
-    const results: SearchResult[] = []
+    const contentType = req.headers.get("content-type") || ""
 
-    // Try Google Custom Search API if keys are configured
-    if (GOOGLE_API_KEY && GOOGLE_CX) {
+    if (contentType.includes("application/json")) {
+      // JSON request with imageUrl
+      const body = await req.json()
+      const { imageUrl } = body
+
+      if (!imageUrl) {
+        return NextResponse.json({ error: "No imageUrl provided" }, { status: 400 })
+      }
+
+      // Try Python backend with image URL
       try {
-        const gRes = await fetch(
-          `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_CX}&searchType=image&q=${encodeURIComponent(imageUrl)}&num=10`
-        )
-        const gData = await gRes.json()
-        if (gData.items) {
-          gData.items.forEach((item: any, i: number) => {
-            results.push({
-              id: `g-${i}`, imageUrl: item.link, sourceUrl: item.image?.contextLink || item.link,
-              sourceName: parseDomain(item.displayLink), title: item.title || "Search result",
-              matchScore: generateMatchScore(i, gData.items.length), category: guessCategory(item.displayLink),
-              thumbnailUrl: item.image?.thumbnailLink || item.link, description: item.snippet,
-              foundAt: new Date().toISOString(),
-            })
-          })
+        formData = new FormData()
+        formData.append("image_url", imageUrl)
+
+        const res = await fetch(`${BACKEND_URL}/api/search-url`, {
+          method: "POST",
+          body: formData,
+          signal: AbortSignal.timeout(60000),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          return NextResponse.json(data)
         }
-      } catch { /* Google API not configured or limit reached */ }
+      } catch {
+        console.log("[Search] Python backend not available for URL search")
+      }
+
+      // Fallback: external search engines
+      return getFallbackResponse(imageUrl)
+
+    } else if (contentType.includes("multipart/form-data")) {
+      // Form data request with file upload
+      try {
+        const formData = await req.formData()
+
+        const res = await fetch(`${BACKEND_URL}/api/search`, {
+          method: "POST",
+          body: formData,
+          signal: AbortSignal.timeout(60000),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          return NextResponse.json(data)
+        }
+      } catch {
+        console.log("[Search] Python backend not available for file search")
+      }
+
+      // Fallback: try to extract image from form data
+      const formData = await req.formData()
+      const file = formData.get("file") as File | null
+
+      if (file) {
+        const bytes = await file.arrayBuffer()
+        const base64 = Buffer.from(bytes).toString("base64")
+        const dataUrl = `data:${file.type};base64,${base64}`
+        return getFallbackResponse(dataUrl)
+      }
+
+      return NextResponse.json(
+        { error: "Python backend unavailable and no file found" },
+        { status: 503 }
+      )
     }
 
-    // Always provide external search engine links as results
-    const externalEngines = [
-      { name: "Google Lens", url: `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(imageUrl)}`, category: "other" as const, desc: "Search this face on Google Lens — the most comprehensive reverse image search engine. Finds visually similar images across the web." },
-      { name: "Yandex Images", url: `https://yandex.com/images/search?rpt=imageview&url=${encodeURIComponent(imageUrl)}`, category: "other" as const, desc: "Yandex reverse image search — excellent for finding faces across Eastern European and Asian websites." },
-      { name: "Bing Visual Search", url: `https://www.bing.com/images/search?q=imgurl:${encodeURIComponent(imageUrl)}&view=detailv2&iss=sbi`, category: "other" as const, desc: "Microsoft Bing's visual search engine. Searches for this exact face across the web." },
-      { name: "TinEye", url: `https://tineye.com/search?url=${encodeURIComponent(imageUrl)}`, category: "other" as const, desc: "TinEye reverse image search — finds where this image appears online, including modified versions." },
-    ]
+    return NextResponse.json({ error: "Unsupported content type" }, { status: 400 })
 
-    externalEngines.forEach((engine, i) => {
-      results.push({
-        id: `ext-${i}`, imageUrl, sourceUrl: engine.url,
-        sourceName: engine.name, title: `Search this face on ${engine.name}`,
-        matchScore: 85 - (i * 5), category: engine.category,
-        thumbnailUrl: imageUrl, description: engine.desc,
-        foundAt: new Date().toISOString(),
-      })
-    })
-
-    return NextResponse.json({ results, count: results.length })
   } catch (err) {
+    console.error("[Search] Error:", err)
     return NextResponse.json({ error: "Search failed" }, { status: 500 })
   }
+}
+
+function getFallbackResponse(imageUrl: string) {
+  return NextResponse.json({
+    matches: [],
+    query_face: {
+      detected: false,
+      message: "Python backend not available. Start it with: cd backend && python -m uvicorn backend.api.main:app --port 8000",
+    },
+    external_engines: [
+      {
+        name: "Google Lens",
+        url: `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(imageUrl)}`,
+        icon: "🔍",
+        description: "Most comprehensive — searches Google's entire image index",
+        category: "other",
+      },
+      {
+        name: "Yandex Images",
+        url: `https://yandex.com/images/search?rpt=imageview&url=${encodeURIComponent(imageUrl)}`,
+        icon: "🌐",
+        description: "Excellent for faces from Eastern Europe, Asia, and social media",
+        category: "other",
+      },
+      {
+        name: "Bing Visual Search",
+        url: `https://www.bing.com/images/search?q=imgurl:${encodeURIComponent(imageUrl)}&view=detailv2&iss=sbi`,
+        icon: "🔎",
+        description: "Microsoft's visual search — finds exact and similar images",
+        category: "other",
+      },
+      {
+        name: "TinEye",
+        url: `https://tineye.com/search?url=${encodeURIComponent(imageUrl)}`,
+        icon: "🎯",
+        description: "Finds where this exact image appears, including edited versions",
+        category: "other",
+      },
+      {
+        name: "PimEyes",
+        url: `https://pimeyes.com/en`,
+        icon: "👁️",
+        description: "Dedicated face search engine — upload this photo for face-specific results",
+        category: "other",
+      },
+      {
+        name: "Search4Faces",
+        url: `https://search4faces.com/`,
+        icon: "👤",
+        description: "Search social media profiles (VK, TikTok, ClubHouse) for this face",
+        category: "social",
+      },
+    ],
+    total_matches: 6,
+    searched_database: 0,
+    backend_available: false,
+  })
 }
