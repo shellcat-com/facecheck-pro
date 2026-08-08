@@ -48,3 +48,6 @@ backend/data/chroma/
 backend/data/images/
 backend/data/uploads/
 *.pyc
+.vercel
+AGENTS.md
+CLAUDE.md

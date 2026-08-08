@@ -14,6 +14,36 @@ const CAT_NAME: Record<Cat, string> = {
   scammer: "Scammers", mugshot: "Mugshots", video: "Videos", other: "Other Sources",
 }
 
+interface MatchMetadata {
+  source?: string
+  crimes?: string
+  reward?: string
+  warning?: string
+  aliases?: string[]
+  nationality?: string[]
+  charge?: string
+  notice_id?: string
+  county?: string
+  charges?: string[]
+  book_date?: string
+  bond?: string
+  state?: string
+  fbi_path?: string
+  fbi_uid?: string
+  physical?: {
+    sex?: string
+    race?: string
+    hair?: string
+    eyes?: string
+    height?: string
+    weight?: string
+    birthplace?: string
+    birth_dates?: string[]
+    nationality?: string
+  }
+  [key: string]: unknown
+}
+
 interface MatchResult {
   id: string
   match_score: number
@@ -29,6 +59,7 @@ interface MatchResult {
   match_label?: string
   match_color?: string
   found_at: string
+  metadata?: MatchMetadata
 }
 
 interface EngineResult {
@@ -60,13 +91,13 @@ export default function SearchPage() {
   const [dbSize, setDbSize] = useState(0)
   const [faceDetected, setFaceDetected] = useState(false)
   const [faceCount, setFaceCount] = useState(0)
+  const [selectedMatch, setSelectedMatch] = useState<MatchResult | null>(null)
 
   const doSearch = useCallback(async (imageUrl: string) => {
     setSearching(true)
     setError("")
 
     try {
-      // Convert data URL to blob for upload
       const resp = await fetch(imageUrl)
       const blob = await resp.blob()
 
@@ -97,10 +128,7 @@ export default function SearchPage() {
     } catch (err: any) {
       console.error("[Search] Error:", err)
       setError(err.message || "Search failed. Is the backend running?")
-      // Still show external engines even on error
-      if (image) {
-        setEngines(getFallbackEngines(image))
-      }
+      setEngines(getFallbackEngines())
     }
 
     setSearching(false)
@@ -116,13 +144,13 @@ export default function SearchPage() {
     doSearch(img)
   }, [router, doSearch])
 
-  const getFallbackEngines = (imageUrl: string): EngineResult[] => [
-    { name: "Google Lens", url: `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(imageUrl)}`, icon: "🔍", description: "Most comprehensive — searches Google's entire image index", category: "other" },
-    { name: "Yandex Images", url: `https://yandex.com/images/search?rpt=imageview&url=${encodeURIComponent(imageUrl)}`, icon: "🌐", description: "Excellent for faces from Eastern Europe, Asia, and social media", category: "other" },
-    { name: "Bing Visual Search", url: `https://www.bing.com/images/search?q=imgurl:${encodeURIComponent(imageUrl)}&view=detailv2&iss=sbi`, icon: "🔎", description: "Microsoft's visual search — finds exact and similar images", category: "other" },
-    { name: "TinEye", url: `https://tineye.com/search?url=${encodeURIComponent(imageUrl)}`, icon: "🎯", description: "Finds where this exact image appears, including edited versions", category: "other" },
-    { name: "PimEyes", url: `https://pimeyes.com/en`, icon: "👁️", description: "Dedicated face search engine — upload for face-specific results", category: "other" },
-    { name: "Search4Faces", url: `https://search4faces.com/`, icon: "👤", description: "Search social media profiles (VK, TikTok, ClubHouse) for this face", category: "social" },
+  const getFallbackEngines = (): EngineResult[] => [
+    { name: "Google Lens", url: "https://lens.google.com/", icon: "🔍", description: "Most comprehensive — searches Google's entire image index. Drag your photo onto the page.", category: "other" },
+    { name: "Yandex Images", url: "https://yandex.com/images/", icon: "🌐", description: "Excellent for Eastern European, Asian, and social media faces. Click the camera icon to upload.", category: "other" },
+    { name: "Bing Visual Search", url: "https://www.bing.com/images/search?view=detailv2&iss=sbi", icon: "🔎", description: "Microsoft's visual search — finds exact and similar images. Click the camera icon.", category: "other" },
+    { name: "TinEye", url: "https://tineye.com/", icon: "🎯", description: "Finds every instance of this exact image online, including edited versions. Upload on the page.", category: "other" },
+    { name: "PimEyes", url: "https://pimeyes.com/en", icon: "👁️", description: "Dedicated face search engine — upload for face-specific matches across the web.", category: "other" },
+    { name: "Search4Faces", url: "https://search4faces.com/", icon: "👤", description: "Search social media profiles (VK, TikTok, ClubHouse) for this face. Upload on site.", category: "social" },
   ]
 
   const filtered = results.filter(r => cat === "all" || r.category === cat)
@@ -178,7 +206,7 @@ export default function SearchPage() {
                   )}
                   <div>
                     <h1 className="text-xl font-bold text-zinc-100">
-                      {results.length > 0 ? `Found ${results.length} matches` : "Search Results"}
+                      {results.length > 0 ? `Found ${results.length} match${results.length > 1 ? "es" : ""}` : "Search Results"}
                     </h1>
                     <p className="text-zinc-500 text-sm">
                       {faceDetected
@@ -202,10 +230,31 @@ export default function SearchPage() {
                     <p className="text-zinc-500 text-xs mt-2">
                       💡 Start the Python backend for real face matching:
                       <code className="ml-2 px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 text-xs">
-                        cd backend && pip install -r requirements.txt && python -m uvicorn backend.api.main:app --port 8000
+                        cd backend && python -m uvicorn backend.api.main:app --port 8000
                       </code>
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* No database matches but face detected — explain why */}
+              {results.length === 0 && faceDetected && backendAvailable && (
+                <div className="mb-8 p-5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl shrink-0">🔍</span>
+                    <div>
+                      <h3 className="font-semibold text-zinc-200 mb-1">No matches in our database</h3>
+                      <p className="text-zinc-400 text-sm leading-relaxed">
+                        We detected a face in your photo and searched across {dbSize.toLocaleString()} indexed faces,
+                        but found no similar matches. This means the person in your photo is not in our database
+                        (which currently covers FBI Wanted, Interpol Red Notices, and county mugshots).
+                      </p>
+                      <p className="text-zinc-500 text-xs mt-2">
+                        💡 Try the external search engines below to search the entire internet for this face.
+                        Each engine opens in a new tab — re-upload the same photo there.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -261,13 +310,12 @@ export default function SearchPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-12">
                     {filtered.map((r) => {
                       const ml = matchLabel(r.match_score)
+                      const meta = r.metadata || {}
                       return (
-                        <a
+                        <button
                           key={r.id}
-                          href={r.source_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="group bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 hover:border-blue-500/30 hover:bg-blue-500/[0.02] hover:shadow-lg hover:shadow-blue-500/[0.04] transition-all duration-200 block"
+                          onClick={() => setSelectedMatch(r)}
+                          className="group bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 hover:border-blue-500/30 hover:bg-blue-500/[0.02] hover:shadow-lg hover:shadow-blue-500/[0.04] transition-all duration-200 block text-left w-full"
                         >
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-2.5 min-w-0">
@@ -288,7 +336,7 @@ export default function SearchPage() {
                               {r.match_score}%
                             </span>
                           </div>
-                          <div className="relative w-full h-32 rounded-lg overflow-hidden bg-zinc-900 mb-3">
+                          <div className="relative w-full h-40 rounded-lg overflow-hidden bg-zinc-900 mb-3">
                             {r.thumbnail_url && (
                               <img
                                 src={r.thumbnail_url}
@@ -301,13 +349,46 @@ export default function SearchPage() {
                               />
                             )}
                           </div>
-                          <p className="text-xs text-zinc-500 leading-relaxed line-clamp-2">
+                          {/* Metadata preview chips */}
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {meta.crimes && (
+                              <span className="px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-medium truncate max-w-[200px]">
+                                {meta.crimes.length > 60 ? meta.crimes.slice(0, 60) + "..." : meta.crimes}
+                              </span>
+                            )}
+                            {meta.reward && (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-medium">
+                                💰 {meta.reward}
+                              </span>
+                            )}
+                            {meta.charge && (
+                              <span className="px-2 py-0.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[10px] font-medium truncate max-w-[200px]">
+                                {meta.charge.length > 60 ? meta.charge.slice(0, 60) + "..." : meta.charge}
+                              </span>
+                            )}
+                            {meta.nationality && Array.isArray(meta.nationality) && meta.nationality.length > 0 && (
+                              <span className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-medium">
+                                🌍 {meta.nationality.join(", ")}
+                              </span>
+                            )}
+                            {meta.charges && Array.isArray(meta.charges) && meta.charges.length > 0 && (
+                              <span className="px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-medium truncate max-w-[200px]">
+                                {meta.charges[0]}
+                              </span>
+                            )}
+                            {meta.book_date && (
+                              <span className="px-2 py-0.5 rounded-full bg-zinc-500/10 border border-zinc-500/20 text-zinc-400 text-[10px] font-medium">
+                                📅 {meta.book_date}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-500 leading-relaxed line-clamp-2 mb-3">
                             {r.description || r.source_name}
                           </p>
-                          <div className="mt-3 flex items-center gap-1 text-xs text-blue-400 group-hover:text-blue-300 font-medium">
-                            View Source →
+                          <div className="flex items-center gap-1 text-xs text-blue-400 group-hover:text-blue-300 font-medium">
+                            View Details →
                           </div>
-                        </a>
+                        </button>
                       )
                     })}
                   </div>
@@ -319,45 +400,36 @@ export default function SearchPage() {
                 🔍 Search This Face on External Engines
               </h3>
               <p className="text-zinc-500 text-xs mb-6 -mt-2">
-                Also search across the entire internet using these reverse image search engines. Each opens in a new tab.
+                Also search across the entire internet using these reverse image search engines. Each opens in a new tab — re-upload your photo there.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-12">
-                {engines.map((engine, i) => {
-                  const ms = 95 - i * 7
-                  const ml = matchLabel(ms)
-                  return (
-                    <a
-                      key={engine.name}
-                      href={engine.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 hover:border-blue-500/30 hover:bg-blue-500/[0.02] hover:shadow-lg hover:shadow-blue-500/[0.04] transition-all duration-200 block"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-2xl">{engine.icon}</span>
-                          <div>
-                            <div className="text-sm font-semibold text-zinc-200 group-hover:text-zinc-100">
-                              {engine.name}
-                            </div>
-                            <div className="text-[10px] text-zinc-500">Search Engine</div>
+                {engines.map((engine) => (
+                  <a
+                    key={engine.name}
+                    href={engine.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 hover:border-blue-500/30 hover:bg-blue-500/[0.02] hover:shadow-lg hover:shadow-blue-500/[0.04] transition-all duration-200 block"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-2xl">{engine.icon}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-zinc-200 group-hover:text-zinc-100">
+                            {engine.name}
                           </div>
+                          <div className="text-[10px] text-zinc-500">External Engine</div>
                         </div>
-                        <span
-                          className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
-                          style={{ background: ml.color }}
-                        >
-                          {ms}%
-                        </span>
                       </div>
-                      <p className="text-xs text-zinc-500 leading-relaxed">{engine.description}</p>
-                      <div className="mt-3 flex items-center gap-1 text-xs text-blue-400 group-hover:text-blue-300 font-medium">
-                        Open {engine.name} →
-                      </div>
-                    </a>
-                  )
-                })}
+                      <span className="text-lg shrink-0 opacity-30 group-hover:opacity-60 transition-opacity">↗</span>
+                    </div>
+                    <p className="text-xs text-zinc-500 leading-relaxed">{engine.description}</p>
+                    <div className="mt-3 flex items-center gap-1 text-xs text-blue-400 group-hover:text-blue-300 font-medium">
+                      Open {engine.name} →
+                    </div>
+                  </a>
+                ))}
               </div>
 
               {/* How to use section */}
@@ -398,6 +470,203 @@ export default function SearchPage() {
           )}
         </div>
       </main>
+
+      {/* === DETAIL MODAL === */}
+      {selectedMatch && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={() => setSelectedMatch(null)}
+        >
+          <div
+            className="bg-[#0f0f12] border border-white/[0.08] rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <div className="sticky top-0 bg-[#0f0f12]/95 backdrop-blur-xl border-b border-white/[0.05] px-6 py-4 flex items-center justify-between rounded-t-2xl">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{selectedMatch.category_icon || CAT_ICON[selectedMatch.category]}</span>
+                <span className="text-xs font-medium text-zinc-500">{selectedMatch.category_label || selectedMatch.source_name}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span
+                  className="px-2.5 py-1 rounded-full text-xs font-bold text-white"
+                  style={{ background: matchLabel(selectedMatch.match_score).color }}
+                >
+                  {selectedMatch.match_score}% Match
+                </span>
+                <button
+                  onClick={() => setSelectedMatch(null)}
+                  className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200 flex items-center justify-center transition-colors text-lg"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {/* Large photo */}
+              {selectedMatch.thumbnail_url && (
+                <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-zinc-900 mb-6">
+                  <img
+                    src={selectedMatch.thumbnail_url}
+                    alt={selectedMatch.title}
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none"
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Title + Source */}
+              <h2 className="text-xl font-bold text-zinc-100 mb-1">{selectedMatch.title}</h2>
+              <p className="text-zinc-500 text-sm mb-4">Source: {selectedMatch.source_name}</p>
+
+              {/* Match score bar */}
+              <div className="mb-6 p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-zinc-500">Face Match Confidence</span>
+                  <span className="text-sm font-bold" style={{ color: matchLabel(selectedMatch.match_score).color }}>
+                    {selectedMatch.match_score}% — {matchLabel(selectedMatch.match_score).text}
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-zinc-800 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${selectedMatch.match_score}%`,
+                      background: matchLabel(selectedMatch.match_score).color,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Metadata detail grid */}
+              {selectedMatch.metadata && Object.keys(selectedMatch.metadata).length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-3">Profile Details</h3>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {selectedMatch.metadata.crimes && (
+                      <div className="p-3 rounded-lg bg-red-500/[0.04] border border-red-500/10 sm:col-span-2">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Crimes</div>
+                        <div className="text-sm text-red-300/90 leading-relaxed">{selectedMatch.metadata.crimes}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.charge && (
+                      <div className="p-3 rounded-lg bg-orange-500/[0.04] border border-orange-500/10 sm:col-span-2">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Charge</div>
+                        <div className="text-sm text-orange-300/90 leading-relaxed">{selectedMatch.metadata.charge}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.charges && Array.isArray(selectedMatch.metadata.charges) && selectedMatch.metadata.charges.length > 0 && !selectedMatch.metadata.charge && (
+                      <div className="p-3 rounded-lg bg-orange-500/[0.04] border border-orange-500/10 sm:col-span-2">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Charges</div>
+                        <div className="text-sm text-orange-300/90 leading-relaxed">{selectedMatch.metadata.charges.join("; ")}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.reward && (
+                      <div className="p-3 rounded-lg bg-amber-500/[0.04] border border-amber-500/10">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">💰 Reward</div>
+                        <div className="text-sm text-amber-300/90 font-semibold">{selectedMatch.metadata.reward}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.warning && (
+                      <div className="p-3 rounded-lg bg-red-600/[0.08] border border-red-500/20 sm:col-span-2">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">⚠️ Warning</div>
+                        <div className="text-sm text-red-300/90 font-semibold leading-relaxed">{selectedMatch.metadata.warning}</div>
+                      </div>
+                    )}
+                    {/* Physical Description */}
+                    {(() => {
+                      const phys = selectedMatch.metadata.physical as Record<string, unknown> | undefined
+                      if (!phys || typeof phys !== "object") return null
+                      const s = (v: unknown) => String(v ?? "")
+                      return <>
+                        {phys.sex && <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10"><div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Sex</div><div className="text-sm text-zinc-300/90">{s(phys.sex)}</div></div>}
+                        {phys.race && <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10"><div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Race</div><div className="text-sm text-zinc-300/90">{s(phys.race)}</div></div>}
+                        {phys.hair && <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10"><div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Hair</div><div className="text-sm text-zinc-300/90">{s(phys.hair)}</div></div>}
+                        {phys.eyes && <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10"><div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Eyes</div><div className="text-sm text-zinc-300/90">{s(phys.eyes)}</div></div>}
+                        {phys.height && <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10"><div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Height</div><div className="text-sm text-zinc-300/90">{s(phys.height)}</div></div>}
+                        {phys.weight && <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10"><div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Weight</div><div className="text-sm text-zinc-300/90">{s(phys.weight)}</div></div>}
+                        {phys.birthplace && <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10"><div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Place of Birth</div><div className="text-sm text-zinc-300/90">{s(phys.birthplace)}</div></div>}
+                        {Array.isArray(phys.birth_dates) && (phys.birth_dates as string[]).length > 0 && <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10 sm:col-span-2"><div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Date(s) of Birth</div><div className="text-sm text-zinc-300/90">{(phys.birth_dates as string[]).join(", ")}</div></div>}
+                      </>
+                    })()}
+                    {selectedMatch.metadata.nationality && Array.isArray(selectedMatch.metadata.nationality) && selectedMatch.metadata.nationality.length > 0 && (
+                      <div className="p-3 rounded-lg bg-blue-500/[0.04] border border-blue-500/10">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">🌍 Nationality</div>
+                        <div className="text-sm text-blue-300/90">{selectedMatch.metadata.nationality.join(", ")}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.aliases && Array.isArray(selectedMatch.metadata.aliases) && selectedMatch.metadata.aliases.length > 0 && (
+                      <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Also Known As</div>
+                        <div className="text-sm text-zinc-300/90">{selectedMatch.metadata.aliases.join(", ")}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.notice_id && (
+                      <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Notice ID</div>
+                        <div className="text-sm text-zinc-300/90 font-mono">{selectedMatch.metadata.notice_id}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.county && (
+                      <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Jurisdiction</div>
+                        <div className="text-sm text-zinc-300/90">{selectedMatch.metadata.county} County</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.book_date && (
+                      <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Book Date</div>
+                        <div className="text-sm text-zinc-300/90">{selectedMatch.metadata.book_date}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.bond && (
+                      <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Bond</div>
+                        <div className="text-sm text-zinc-300/90">${selectedMatch.metadata.bond}</div>
+                      </div>
+                    )}
+                    {selectedMatch.metadata.state && (
+                      <div className="p-3 rounded-lg bg-zinc-500/[0.04] border border-zinc-500/10">
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">State</div>
+                        <div className="text-sm text-zinc-300/90">{selectedMatch.metadata.state}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Description */}
+              {selectedMatch.description && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-2">Description</h3>
+                  <p className="text-sm text-zinc-400 leading-relaxed">{selectedMatch.description}</p>
+                </div>
+              )}
+
+              {/* Source link */}
+              <div className="flex gap-3">
+                <a
+                  href={selectedMatch.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold text-center transition-colors"
+                >
+                  🔗 View Original Source
+                </a>
+                <button
+                  onClick={() => setSelectedMatch(null)}
+                  className="px-6 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 text-sm transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-white/[0.04] bg-black/40">

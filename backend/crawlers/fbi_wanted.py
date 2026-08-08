@@ -56,23 +56,49 @@ async def fetch_fbi_wanted(max_pages: int = 5) -> List[Dict[str, Any]]:
                     description = item.get("description", "")
                     details = item.get("details", "")
                     reward = item.get("reward_text", "")
+                    warning = item.get("warning_message", "")
+
+                    # Actual FBI profile page URL (not the image!)
+                    fbi_path = item.get("path", "")
+                    source_url = f"https://www.fbi.gov{fbi_path}" if fbi_path else ""
+
+                    # Physical description
+                    phys = {
+                        "sex": item.get("sex", ""),
+                        "race": item.get("race", ""),
+                        "hair": item.get("hair", ""),
+                        "eyes": item.get("eyes", ""),
+                        "height": f"{item.get('height_min','')}-{item.get('height_max','')}\"" if item.get("height_min") else "",
+                        "weight": f"{item.get('weight_min','')}-{item.get('weight_max','')} lbs" if item.get("weight_min") else "",
+                        "birthplace": item.get("place_of_birth", ""),
+                        "birth_dates": item.get("dates_of_birth_used", []),
+                        "nationality": item.get("nationality", ""),
+                        "scars_marks": item.get("scars_and_marks", ""),
+                        "occupations": item.get("occupations", []),
+                        "field_offices": item.get("field_offices", []),
+                    }
 
                     faces.append({
-                        "source_url": image_url,
+                        "source_url": source_url or f"https://www.fbi.gov/wanted",
                         "source_name": "FBI Wanted",
                         "category": "mugshot",
                         "title": title or "FBI Wanted Person",
                         "thumbnail_url": image_url,
                         "description": (
                             f"FBI Wanted: {title}. "
+                            f"{warning + '. ' if warning else ''}"
                             f"{reward + '. ' if reward else ''}"
                             f"{description[:200] if description else details[:200]}"
                         )[:500],
                         "extra_metadata": {
                             "source": "fbi",
-                            "crimes": details[:300] if details else "",
+                            "crimes": details[:500] if details else "",
                             "reward": reward,
+                            "warning": warning,
                             "aliases": item.get("aliases", []),
+                            "physical": phys,
+                            "fbi_path": fbi_path,
+                            "fbi_uid": item.get("uid", ""),
                         },
                     })
 
@@ -138,8 +164,11 @@ async def fetch_interpol_red_notices(max_pages: int = 5) -> List[Dict[str, Any]]
                         arrest_warrants = detail.get("arrest_warrants", [])
                         charge = arrest_warrants[0].get("charge", "") if arrest_warrants else ""
 
+                        # Interpol notice page URL
+                        notice_url = f"https://www.interpol.int/en/How-we-work/Notices/Red-Notices/View-Red-Notices"
+
                         faces.append({
-                            "source_url": photo_url,
+                            "source_url": f"{base_url}/{notice_id}" if notice_id else notice_url,
                             "source_name": "Interpol Red Notice",
                             "category": "mugshot",
                             "title": full_name or f"Red Notice #{notice_id}",

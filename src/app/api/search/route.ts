@@ -105,52 +105,56 @@ function getFallbackResponse(imageUrl: string) {
       detected: false,
       message: "Python backend not available. Start it with: cd backend && python -m uvicorn backend.api.main:app --port 8000",
     },
-    external_engines: [
-      {
-        name: "Google Lens",
-        url: `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(imageUrl)}`,
-        icon: "🔍",
-        description: "Most comprehensive — searches Google's entire image index",
-        category: "other",
-      },
-      {
-        name: "Yandex Images",
-        url: `https://yandex.com/images/search?rpt=imageview&url=${encodeURIComponent(imageUrl)}`,
-        icon: "🌐",
-        description: "Excellent for faces from Eastern Europe, Asia, and social media",
-        category: "other",
-      },
-      {
-        name: "Bing Visual Search",
-        url: `https://www.bing.com/images/search?q=imgurl:${encodeURIComponent(imageUrl)}&view=detailv2&iss=sbi`,
-        icon: "🔎",
-        description: "Microsoft's visual search — finds exact and similar images",
-        category: "other",
-      },
-      {
-        name: "TinEye",
-        url: `https://tineye.com/search?url=${encodeURIComponent(imageUrl)}`,
-        icon: "🎯",
-        description: "Finds where this exact image appears, including edited versions",
-        category: "other",
-      },
-      {
-        name: "PimEyes",
-        url: `https://pimeyes.com/en`,
-        icon: "👁️",
-        description: "Dedicated face search engine — upload this photo for face-specific results",
-        category: "other",
-      },
-      {
-        name: "Search4Faces",
-        url: `https://search4faces.com/`,
-        icon: "👤",
-        description: "Search social media profiles (VK, TikTok, ClubHouse) for this face",
-        category: "social",
-      },
-    ],
+    external_engines: getExternalEngineLinks(),
     total_matches: 6,
     searched_database: 0,
     backend_available: false,
   })
+}
+
+function getExternalEngineLinks() {
+  return [
+    {
+      name: "Google Lens",
+      url: "https://lens.google.com/",
+      icon: "🔍",
+      description: "Most comprehensive — searches Google's entire image index. Drag your photo onto the page.",
+      category: "other",
+    },
+    {
+      name: "Yandex Images",
+      url: "https://yandex.com/images/",
+      icon: "🌐",
+      description: "Excellent for Eastern European, Asian, and social media faces. Click the camera icon to upload.",
+      category: "other",
+    },
+    {
+      name: "Bing Visual Search",
+      url: "https://www.bing.com/images/search?view=detailv2&iss=sbi",
+      icon: "🔎",
+      description: "Microsoft's visual search — finds exact and similar images. Click the camera icon.",
+      category: "other",
+    },
+    {
+      name: "TinEye",
+      url: "https://tineye.com/",
+      icon: "🎯",
+      description: "Finds every instance of this exact image online, including edited versions. Upload on the page.",
+      category: "other",
+    },
+    {
+      name: "PimEyes",
+      url: "https://pimeyes.com/en",
+      icon: "👁️",
+      description: "Dedicated face search engine — upload for face-specific matches across the web.",
+      category: "other",
+    },
+    {
+      name: "Search4Faces",
+      url: "https://search4faces.com/",
+      icon: "👤",
+      description: "Search social media profiles (VK, TikTok, ClubHouse) for this face. Upload on site.",
+      category: "social",
+    },
+  ]
 }

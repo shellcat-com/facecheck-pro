@@ -113,12 +113,12 @@ async def seed_fbi_interpol() -> int:
     """Seed database with FBI Wanted + Interpol Red Notices."""
     print("\n🔍 Seeding: FBI Most Wanted + Interpol Red Notices...")
 
-    fbi_faces = await fetch_fbi_wanted(max_pages=5)
+    fbi_faces = await fetch_fbi_wanted(max_pages=20)
     interpol_faces = await fetch_interpol_red_notices(max_pages=10)
     all_faces = fbi_faces + interpol_faces
 
     print(f"  FBI+Interpol: {len(all_faces)} total records to process")
-    indexed = await process_faces(all_faces, "mugshot", max_download=75)
+    indexed = await process_faces(all_faces, "mugshot", max_download=150)
     print(f"  ✅ FBI+Interpol: {indexed} faces indexed")
     return indexed
 

@@ -185,20 +185,26 @@ class FaceVectorStore:
                     continue
 
                 meta = results["metadatas"][0][i] if results["metadatas"] else {}
-                hits.append(
-                    {
-                        "id": doc_id,
-                        "match_score": match_score,
-                        "similarity": round(similarity, 4),
-                        "source_url": meta.get("source_url", ""),
-                        "source_name": meta.get("source_name", ""),
-                        "category": meta.get("category", "other"),
-                        "title": meta.get("title", ""),
-                        "thumbnail_url": meta.get("thumbnail_url", ""),
-                        "description": meta.get("description", ""),
-                        "indexed_at": meta.get("indexed_at", ""),
-                    }
-                )
+
+                # Extract known fields, pass everything else as extra_metadata
+                known_fields = {"source_url", "source_name", "category", "title",
+                                "thumbnail_url", "description", "indexed_at"}
+                extra = {k: v for k, v in meta.items() if k not in known_fields}
+
+                hit = {
+                    "id": doc_id,
+                    "match_score": match_score,
+                    "similarity": round(similarity, 4),
+                    "source_url": meta.get("source_url", ""),
+                    "source_name": meta.get("source_name", ""),
+                    "category": meta.get("category", "other"),
+                    "title": meta.get("title", ""),
+                    "thumbnail_url": meta.get("thumbnail_url", ""),
+                    "description": meta.get("description", ""),
+                    "indexed_at": meta.get("indexed_at", ""),
+                    "metadata": extra,
+                }
+                hits.append(hit)
 
             return hits
 

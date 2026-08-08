@@ -84,7 +84,7 @@ class FaceEmbedder:
 
     async def embed_image(self, image_path: str, threshold: float = 0.5) -> List[dict]:
         """
-        Full pipeline: load image, detect faces, compute ArcFace embeddings.
+        Full pipeline: load image from disk, detect faces, compute ArcFace embeddings.
         Uses InsightFace's model.get() which does detection + recognition in one pass.
 
         Returns list of {box: {x,y,w,h}, embedding: 512-dim float32, confidence: float}
@@ -94,17 +94,33 @@ class FaceEmbedder:
         img = cv2.imread(image_path)
         if img is None:
             return []
+        return self._process_image(img, threshold)
 
+    async def embed_bytes(self, image_bytes: bytes, threshold: float = 0.5) -> List[dict]:
+        """
+        RAM-ONLY pipeline: decode bytes in memory, detect faces, compute embeddings.
+        NEVER touches disk. Image bytes are decoded, processed, and discarded.
+
+        Returns list of {box: {x,y,w,h}, embedding: 512-dim float32, confidence: float}
+        """
+        import cv2
+
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return []
+        return self._process_image(img, threshold)
+
+    def _process_image(self, img: np.ndarray, threshold: float = 0.5) -> List[dict]:
+        """Shared pipeline: numpy image → detect faces → compute embeddings."""
         results = []
 
         try:
-            # Temporarily lower threshold for this call
             old_thresh = self._model.det_thresh
             self._model.det_thresh = threshold
 
             faces = self._model.get(img)
 
-            # Restore threshold
             self._model.det_thresh = old_thresh
 
             for face in faces:
@@ -115,7 +131,7 @@ class FaceEmbedder:
                 if w < self._min_face_size or h < self._min_face_size:
                     continue
 
-                embedding = face.embedding  # 512-dim, already normalized by InsightFace
+                embedding = face.embedding
                 if embedding is None or len(embedding) != 512:
                     continue
 
@@ -128,7 +144,7 @@ class FaceEmbedder:
                 })
 
         except Exception as e:
-            print(f"[FaceEmbedder] embed_image error: {e}")
+            print(f"[FaceEmbedder] _process_image error: {e}")
             import traceback; traceback.print_exc()
 
         return results
