@@ -1,23 +1,24 @@
 # FaceCheck Pro
 
-A reverse-engineering of FaceCheck.id — a face recognition search engine that finds where a face appears online. Upload a photo, get back matching profiles with source URLs, metadata, and confidence scores.
+![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)
+![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-black.svg)
+![Next.js 16](https://img.shields.io/badge/Next.js-16-black.svg)
+![Scope: educational](https://img.shields.io/badge/scope-educational-black.svg)
 
-**Live architecture matches FaceCheck.id:** client-side face detection → 512-dim ArcFace embedding → cosine similarity vector search → return matches with source URLs.
+A working reconstruction of how a face-recognition search engine (à la FaceCheck.id) is built — from public numbers and off-the-shelf models. Upload a photo, get back matching profiles with source URLs, metadata, and confidence scores.
+
+The point isn't the 252 faces in the demo index. It's the architecture: **client-side face detection → 512-dim ArcFace embedding → cosine-similarity vector search → matches with source URLs** — the same shape every embedding-based face search engine runs, from PimEyes to Clearview.
 
 ## How It Works
 
-```
-┌──────────────┐     ┌────────────────┐     ┌──────────────┐     ┌───────────┐
-│  Browser     │────▶│  Next.js API   │────▶│  FastAPI     │────▶│ ChromaDB  │
-│  face-api.js │     │  proxy         │     │  InsightFace │     │ (vectors) │
-│  (128d)      │     │  :3000         │     │  ArcFace R50 │     │ :8000     │
-└──────────────┘     └────────────────┘     │  (512d)      │     └───────────┘
-                                            └──────────────┘
+![FaceCheck Pro architecture](docs/architecture.svg)
 
-Upload → detect face → extract 512-dim vector → cosine similarity search → return matches
-```
+Two paths share one ChromaDB vector store:
 
-**RAM-only pipeline.** Images are downloaded to memory, embedded, and discarded. Nothing is stored on disk except face embeddings (512 floats = 2KB per face) and source URLs. Photos load from their original servers (FBI, Interpol, etc.) — never from ours.
+- **Query (real-time, RAM-only):** `upload → SCRFD detect → ArcFace embed (512-d) → HNSW cosine search → top-K + source URLs`. The uploaded photo is decoded in memory, turned into a vector, and garbage-collected. Result photos load directly from their origin servers (fbi.gov, CDNs) into your browser — they never pass through the search server.
+- **Index (offline crawl + seed):** `crawlers → download to RAM → embed → store [512 floats + URL + metadata]`. The image bytes are discarded after embedding.
+
+**Nothing is stored on disk except the vectors and URLs** (512 floats = 2 KB per face). This is the whole trick: 1.4 billion faces is ~2.8 TB of vectors (≈13 TB with metadata) — one hard drive, not a photo warehouse. The photos stay where they already live.
 
 ## Tech Stack
 
@@ -128,6 +129,23 @@ Each face in the database = **~9KB** total:
 | Vector DB scale | SQLite (single machine) | Sharded FAISS/Milvus across 100s of machines |
 | Image storage | None (RAM-only) | None (RAM-only + CDN cache) |
 
+## Ethics & scope
+
+This is an educational reconstruction, published to explain how commercial face-search
+engines actually work — the same reason researchers dissect PimEyes and Clearview in public.
+
+- The demo index holds **252 faces**, seeded almost entirely from the **FBI Wanted** and
+  **Interpol Red Notice** public APIs (government data, published for identification) plus
+  a handful of **synthetic** faces (`randomuser.me`, `dicebear`) for testing.
+- The crawlers only touch **public** endpoints and identify themselves with a research
+  User-Agent. There is no proxy rotation, no CAPTCHA-solving, no anti-bot evasion — against
+  real platforms they get rate-limited and stop. That's the point: the hard part of a
+  billion-face index is crawling infrastructure, and this repo deliberately doesn't build it.
+- **No private individuals' data ships in this repo.** Scraped images, the vector DB, and
+  uploads are all git-ignored. Don't point this at people who haven't consented, and don't
+  use it to identify, track, or harass anyone. Face search is a serious privacy hazard —
+  understand it so you can defend against it, not weaponize it.
+
 ## License
 
-MIT
+[MIT](LICENSE) — Copyright (c) 2026 shellcat

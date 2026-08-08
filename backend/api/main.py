@@ -599,38 +599,15 @@ async def facecheck_search(request: dict):
         np.array(embedding), top_k=30, min_similarity=0.25
     )
 
-    # Convert to FaceCheck.id format with base64 images
+    # Convert to FaceCheck.id format. This store is RAM-only — we keep no local
+    # image cache — so we return the source thumbnail URL instead of an embedded
+    # image. (The real FaceCheck.id base64-encoded result images as an anti-
+    # scraping measure; we simply hand back the origin URL and the photo loads
+    # from there — fbi.gov, a CDN, etc. — never from us.)
     items = []
     for r in results:
-        # Try to load the local image and encode as base64
         base64_img = ""
         thumb_url = r.get("thumbnail_url", "")
-
-        # Load local image if available
-        local_img_path = None
-        for cat_dir in IMAGES_DIR.iterdir():
-            if cat_dir.is_dir():
-                for img_file in cat_dir.iterdir():
-                    if img_file.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
-                        # Simple check: see if the URL hash matches
-                        import hashlib
-                        url_hash = hashlib.md5(thumb_url.encode()).hexdigest()[:12]
-                        if url_hash in img_file.name:
-                            local_img_path = img_file
-                            break
-                if local_img_path:
-                    break
-
-        if local_img_path and local_img_path.exists():
-            try:
-                from PIL import Image as PILImage
-                img = PILImage.open(local_img_path)
-                img.thumbnail((400, 400))
-                buf = io.BytesIO()
-                img.save(buf, "WEBP", quality=80)
-                base64_img = "data:image/webp;base64," + b64.b64encode(buf.getvalue()).decode()
-            except Exception:
-                base64_img = ""
 
         cat = r.get("category", "other")
         label = match_label(r.get("match_score", 0))
@@ -641,6 +618,7 @@ async def facecheck_search(request: dict):
             "score": r["match_score"],
             "base64": base64_img,
             "url": r.get("source_url", ""),
+            "thumbnail_url": thumb_url,
             "source_name": r.get("source_name", ""),
             "category": cat,
             "category_icon": CATEGORY_ICONS.get(cat, "🌐"),
@@ -681,17 +659,8 @@ async def facecheck_upload(file: UploadFile = File(...)):
 
     try:
         contents = await file.read()
-        temp_filename = f"{uuid_mod.uuid4().hex}.jpg"
-        temp_path = UPLOAD_DIR / temp_filename
-        with open(temp_path, "wb") as f:
-            f.write(contents)
-
-        faces = await embedder.embed_image(str(temp_path), threshold=0.4)
-
-        try:
-            os.remove(temp_path)
-        except OSError:
-            pass
+        # RAM-only — embed directly from the uploaded bytes, never write to disk
+        faces = await embedder.embed_bytes(contents, threshold=0.4)
 
         if not faces:
             return JSONResponse(
